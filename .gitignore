@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.expo/
+.vercel/
+*.log
+.env
+.env.*
+!.env.example
+google-services.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+.export-check/
+firebase/seed/images/

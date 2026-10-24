@@ -1,0 +1,697 @@
+{
+  "name": "Califnco – Daily Instagram Product Post",
+  "nodes": [
+    {
+      "id": "daily-trigger",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg0",
+              "name": "FIREBASE_PROJECT_ID",
+              "value": "REPLACE_WITH_FIREBASE_PROJECT_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg1",
+              "name": "CLOUDINARY_CLOUD_NAME",
+              "value": "REPLACE_WITH_CLOUD_NAME",
+              "type": "string"
+            },
+            {
+              "id": "cfg2",
+              "name": "CLOUDINARY_UPLOAD_PRESET",
+              "value": "REPLACE_WITH_UNSIGNED_PRESET",
+              "type": "string"
+            },
+            {
+              "id": "cfg3",
+              "name": "IG_USER_ID",
+              "value": "REPLACE_WITH_INSTAGRAM_BUSINESS_ACCOUNT_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg4",
+              "name": "GRAPH_VERSION",
+              "value": "v23.0",
+              "type": "string"
+            },
+            {
+              "id": "cfg5",
+              "name": "GEMINI_MODEL",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "cfg6",
+              "name": "STORE_NAME",
+              "value": "Califnco",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fetch-products",
+      "name": "Fetch Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://firestore.googleapis.com/v1/projects/{{ $('Config').first().json.FIREBASE_PROJECT_ID }}/databases/(default)/documents/products?pageSize=300",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Google Service Account (Firestore)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "fetch-logs",
+      "name": "Fetch Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://firestore.googleapis.com/v1/projects/{{ $('Config').first().json.FIREBASE_PROJECT_ID }}/databases/(default)/documents/automationLogs?pageSize=300",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Google Service Account (Firestore)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "pick-product",
+      "name": "Pick Product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Firestore REST returns typed values; unwrap them.\nconst unwrap = (v) => {\n  if (v === undefined) return undefined;\n  if ('stringValue' in v) return v.stringValue;\n  if ('integerValue' in v) return Number(v.integerValue);\n  if ('doubleValue' in v) return v.doubleValue;\n  if ('booleanValue' in v) return v.booleanValue;\n  if ('timestampValue' in v) return v.timestampValue;\n  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, unwrap(x)]));\n  if ('arrayValue' in v) return (v.arrayValue.values || []).map(unwrap);\n  return null;\n};\nconst docs = (name) => ($(name).first().json.documents || []).map((d) => ({ id: d.name.split('/').pop(), ...Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, unwrap(v)])) }));\n\nconst products = docs('Fetch Products').filter((p) => p.active !== false && p.stock > 0 && p.image !== undefined);\nconst logs = docs('Fetch Logs');\nconst today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10); // IST date\n\n// Idempotency: never run twice per day (a failed run may be retried).\nconst todays = logs.find((l) => l.id === today);\nif (todays && ['started', 'success'].includes(todays.status)) return [];\n\n// Duplicate prevention: prefer products never posted successfully; otherwise the least recently posted.\nconst lastPosted = {};\nfor (const l of logs) if (l.status === 'success' && l.productId) lastPosted[l.productId] = Math.max(lastPosted[l.productId] || 0, Date.parse(l.postedAt) || 0);\nconst fresh = products.filter((p) => !lastPosted[p.id]);\nconst pool = fresh.length ? fresh : [...products].sort((a, b) => (lastPosted[a.id] || 0) - (lastPosted[b.id] || 0)).slice(0, 5);\nif (!pool.length) throw new Error('No eligible products to post');\nconst p = pool[Math.floor(Math.random() * pool.length)];\nreturn [{ json: { today, product: p } }];"
+      }
+    },
+    {
+      "id": "log-started",
+      "name": "Log Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/{{ $('Config').first().json.FIREBASE_PROJECT_ID }}/databases/(default)/documents/automationLogs/{{ $json.today }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { status: { stringValue: 'started' }, productId: { stringValue: $json.product.id }, productName: { stringValue: $json.product.name }, startedAt: { stringValue: new Date().toISOString() } } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Google Service Account (Firestore)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const p = $('Pick Product').first().json.product;\nconst specs = Object.entries(p.specs || {}).map(([k, v]) => k + ': ' + v).join(', ');\nconst prompt = `You are the social media manager for ${$('Config').first().json.STORE_NAME}, a water purifier store in India.\nWrite an Instagram post for this product. Use ONLY the facts below; do not invent features, certifications or discounts.\nProduct: ${p.name} (${p.brand}), category: ${p.category}\nPrice: ₹${p.price}\nSpecs: ${specs}\nDescription: ${p.description}\n\nReturn JSON with keys:\n- caption: 2-4 short engaging sentences, friendly tone, 1-3 emojis, includes the price in ₹ and a call to action (e.g. \"Order in the Califnco app\"). Max 600 characters. No hashtags in the caption.\n- hashtags: array of 10-15 relevant hashtags (strings starting with #), mix of broad (#waterpurifier) and specific.\n- imagePrompt: one sentence describing a photorealistic studio advertisement photo for this kind of product (modern water purifier in a clean bright kitchen, soft lighting). No text, logos or people.`;\nreturn [{ json: { body: { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.8 } } } }];"
+      }
+    },
+    {
+      "id": "gemini-caption",
+      "name": "Gemini Caption",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Config').first().json.GEMINI_MODEL }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Gemini API key (x-goog-api-key)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000
+    },
+    {
+      "id": "parse-content",
+      "name": "Parse Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        460
+      ],
+      "parameters": {
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nif (!raw) throw new Error('Gemini returned no content: ' + JSON.stringify($json).slice(0, 300));\nconst out = JSON.parse(raw);\nconst tags = (out.hashtags || []).map((t) => '#' + String(t).replace(/[^\\p{L}\\p{N}_]/gu, '')).filter((t) => t.length > 1).slice(0, 30);\nconst caption = (String(out.caption).trim() + '\\n\\n' + tags.join(' ')).slice(0, 2200);\nconst imagePrompt = String(out.imagePrompt || 'modern water purifier on a kitchen counter') + ', photorealistic, studio lighting, product photography, no text, no watermark';\nreturn [{ json: { caption, imagePrompt } }];"
+      }
+    },
+    {
+      "id": "generate-image",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        460
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://image.pollinations.ai/prompt/{{ encodeURIComponent($json.imagePrompt) }}?width=1080&height=1080&nologo=true&seed={{ Math.floor(Math.random()*100000) }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "id": "upload-to-cloudinary",
+      "name": "Upload to Cloudinary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cloudinary.com/v1_1/{{ $('Config').first().json.CLOUDINARY_CLOUD_NAME }}/image/upload",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "upload_preset",
+              "value": "={{ $('Config').first().json.CLOUDINARY_UPLOAD_PRESET }}"
+            },
+            {
+              "name": "public_id",
+              "value": "=califnco/instagram/{{ $('Pick Product').first().json.today }}-{{ $('Pick Product').first().json.product.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "instagram-image-url",
+      "name": "Instagram Image URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        460
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "u1",
+              "name": "image_url",
+              "type": "string",
+              "value": "={{ $json.secure_url.replace('/upload/', '/upload/f_jpg,q_auto,w_1080,h_1080,c_fill/') }}"
+            },
+            {
+              "id": "u2",
+              "name": "caption",
+              "type": "string",
+              "value": "={{ $('Parse Content').first().json.caption }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "create-ig-container",
+      "name": "Create IG Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.GRAPH_VERSION }}/{{ $('Config').first().json.IG_USER_ID }}/media",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_url",
+              "value": "={{ $json.image_url }}"
+            },
+            {
+              "name": "caption",
+              "value": "={{ $json.caption }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "",
+          "name": "Meta access_token (query auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000
+    },
+    {
+      "id": "wait-for-processing",
+      "name": "Wait for Processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        460
+      ],
+      "parameters": {
+        "amount": 20,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "publish-to-instagram",
+      "name": "Publish to Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.GRAPH_VERSION }}/{{ $('Config').first().json.IG_USER_ID }}/media_publish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{ $('Create IG Container').first().json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "",
+          "name": "Meta access_token (query auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 15000
+    },
+    {
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/{{ $('Config').first().json.FIREBASE_PROJECT_ID }}/databases/(default)/documents/automationLogs/{{ $('Pick Product').first().json.today }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { status: { stringValue: 'success' }, productId: { stringValue: $('Pick Product').first().json.product.id }, productName: { stringValue: $('Pick Product').first().json.product.name }, instagramMediaId: { stringValue: String($json.id) }, imageUrl: { stringValue: $('Instagram Image URL').first().json.image_url }, caption: { stringValue: $('Instagram Image URL').first().json.caption }, postedAt: { stringValue: new Date().toISOString() } } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Google Service Account (Firestore)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        760
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "build-failure-log",
+      "name": "Build Failure Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        760
+      ],
+      "parameters": {
+        "jsCode": "const e = $json.execution || {};\nconst today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);\nreturn [{ json: { today, failedNode: e.lastNodeExecuted || 'unknown', message: String((e.error && e.error.message) || 'unknown error').slice(0, 900) } }];"
+      }
+    },
+    {
+      "id": "log-failure",
+      "name": "Log Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        760
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/REPLACE_WITH_FIREBASE_PROJECT_ID/databases/(default)/documents/automationLogs/{{ $json.today }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { status: { stringValue: 'failed' }, failedNode: { stringValue: $json.failedNode }, error: { stringValue: $json.message }, failedAt: { stringValue: new Date().toISOString() } } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Google Service Account (Firestore)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Products": {
+      "main": [
+        [
+          {
+            "node": "Fetch Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Logs": {
+      "main": [
+        [
+          {
+            "node": "Pick Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Product": {
+      "main": [
+        [
+          {
+            "node": "Log Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Started": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Caption",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Caption": {
+      "main": [
+        [
+          {
+            "node": "Parse Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Content": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Upload to Cloudinary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Cloudinary": {
+      "main": [
+        [
+          {
+            "node": "Instagram Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Image URL": {
+      "main": [
+        [
+          {
+            "node": "Create IG Container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create IG Container": {
+      "main": [
+        [
+          {
+            "node": "Wait for Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Processing": {
+      "main": [
+        [
+          {
+            "node": "Publish to Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Instagram": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure Log": {
+      "main": [
+        [
+          {
+            "node": "Log Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

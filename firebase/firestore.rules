@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && userDoc().role == 'admin';
+    }
+    function isApprovedDealer() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/dealers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/dealers/$(request.auth.uid)).data.status == 'approved';
+    }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // Users: self-service profile. Role can never be changed from the client
+    // (admins are promoted only via the console / Admin SDK).
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && request.resource.data.role in ['customer', 'dealer'];
+      allow update: if isOwner(uid)
+        && request.resource.data.role == resource.data.role;
+      allow update: if isAdmin();
+    }
+
+    // Dealers: a dealer can apply (always as pending) but only an admin can change status.
+    match /dealers/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && request.resource.data.status == 'pending';
+      allow update: if isOwner(uid)
+        && request.resource.data.status == resource.data.status;
+      allow update: if isAdmin();
+    }
+
+    // Public catalogue (retail price only). Writes are admin-only.
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Wholesale prices live in a separate collection so they can be access-controlled.
+    match /dealerPricing/{id} {
+      allow read: if isApprovedDealer() || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Orders are created ONLY by the trusted server (Admin SDK bypasses rules),
+    // after verifying payment and re-pricing from the database.
+    match /orders/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin();
+      allow create, delete: if false;
+    }
+
+    match /carts/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /addresses/{id} {
+      allow read, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin();
+    }
+
+    match /serviceBookings/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'requested';
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin();
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create: if isAdmin();
+    }
+
+    match /automationLogs/{id} {
+      allow read: if isAdmin();
+      allow write: if false; // written by n8n through the Admin/REST service account
+    }
+  }
+}
