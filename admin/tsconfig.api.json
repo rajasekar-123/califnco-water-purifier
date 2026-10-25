@@ -3,5 +3,6 @@
     "target": "es2022", "module": "nodenext", "moduleResolution": "nodenext",
     "strict": true, "noEmit": true, "skipLibCheck": true, "types": ["node"]
   },
-  "include": ["api"]
+  "include": ["api"],
+  "exclude": ["api/__tests__"]
 }
