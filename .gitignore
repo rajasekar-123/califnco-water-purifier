@@ -10,4 +10,3 @@ google-services.json
 serviceAccount*.json
 *-firebase-adminsdk-*.json
 .export-check/
-firebase/seed/images/

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -83,6 +83,15 @@ export default function ProductDetails() {
           </Text>
           {wholesale && minQty > 1 && <Text style={{ color: colors.muted, marginTop: 4 }}>Minimum wholesale quantity: {minQty}</Text>}
 
+          {product.imageCredit && (
+            <Pressable onPress={() => Linking.openURL(product.imageCredit!.sourceUrl)}>
+              <Text style={s.credit}>
+                Photo: {product.imageCredit.author} · {product.imageCredit.license} · Wikimedia Commons
+                {product.imageCredit.matchLevel === 'type' ? ' · illustrative image' : ''}
+              </Text>
+            </Pressable>
+          )}
+
           <Text style={s.section}>About this product</Text>
           <Text style={s.desc}>{product.description}</Text>
 
@@ -120,6 +129,7 @@ const s = StyleSheet.create({
   tag: { backgroundColor: colors.aquaSoft, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
   tagText: { color: colors.aquaDark, fontWeight: '700', fontSize: 12 },
   section: { fontSize: 17, fontWeight: '800', color: colors.navy, marginTop: 22, marginBottom: 8 },
+  credit: { color: colors.muted, fontSize: 11, marginTop: 14 },
   desc: { color: colors.text, lineHeight: 22 },
   specs: { backgroundColor: '#fff', borderRadius: radius.md, paddingHorizontal: 14, ...shadow },
   specRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12 },

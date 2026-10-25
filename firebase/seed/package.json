@@ -2,6 +2,18 @@
   "name": "califnco-seed",
   "private": true,
   "type": "module",
-  "scripts": { "seed": "node seed.mjs", "dry": "node seed.mjs --dry-run" },
-  "dependencies": { "firebase-admin": "^13.0.0" }
+  "scripts": {
+    "seed": "node --env-file-if-exists=.env seed.mjs",
+    "dry": "node seed.mjs --dry-run",
+    "images:fetch": "node fetch-images.mjs",
+    "images:validate": "node validate-images.mjs",
+    "images:upload": "node --env-file-if-exists=.env upload-images.mjs",
+    "images:upload:dry": "node upload-images.mjs --dry-run",
+    "admin:grant": "node --env-file-if-exists=.env make-admin.mjs",
+    "admin:verify": "node --env-file-if-exists=.env verify-admin.mjs"
+  },
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "firebase-admin": "^13.0.0"
+  }
 }

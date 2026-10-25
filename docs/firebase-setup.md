@@ -26,7 +26,7 @@ npm install
 export FIREBASE_SERVICE_ACCOUNT_JSON="$(cat /path/to/serviceAccount.json)"
 npm run seed
 ```
-Product images: see `docs/images.md` (the seed writes retail data to `products/*` and wholesale prices to `dealerPricing/*`).
+Product images: see "Product images" in the root README (the seed writes retail data to `products/*` and wholesale prices to `dealerPricing/*`).
 
 ## 4. Create the first admin
 Admin accounts cannot be self-created (rules forbid `role: admin` from clients).

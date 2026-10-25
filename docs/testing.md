@@ -8,9 +8,12 @@
 | `cd mobile && npx expo export --platform android` | Metro bundles the whole app | succeeds |
 | `cd admin && npm run build` | admin type check + production build | succeeds |
 | `cd admin && npx tsc -p tsconfig.api.json` | serverless API type check | clean |
+| `cd admin && npm test` | **API handlers** with in-memory Firestore + mocked Razorpay: server-side pricing, dealer wholesale gating (approved / pending / rejected), min quantity, stock, forged/mismatched/failed payments, idempotent verify, atomic stock failure, admin-only actions and notifications | 19 passed |
+| `cd firebase && npm i && npm run test:rules` | **Firestore security rules** on the real emulator (needs Java): role escalation, dealer self-approval, wholesale-price visibility, client order forgery, private carts/addresses/notifications, admin-only logs | 23 passed |
+| `cd firebase/seed && npm run images:validate` | image manifest: real JPEG/PNG, size, allowed licence, attribution, source URL | see `images/REVIEW.md` |
 | `node automation/test-workflow.mjs automation/instagram-daily-post.json` | n8n Code nodes: Firestore unwrap, duplicate prevention, same-day lock, retry-after-failure, Gemini parsing | passed |
 
-**Not automated / not yet run:** Firestore rules (needs the emulator + Java), the serverless API against real Firebase/Razorpay, UI flows on a device, the live n8n → Instagram chain. These require your Firebase/Razorpay/Meta accounts, so the journeys below are the manual verification you should run once configured.
+**Not automated / not yet run:** the serverless API against real Firebase/Razorpay (the API tests use fakes — they verify *my* logic, not Razorpay's behaviour), UI flows on a device, the live n8n → Instagram chain. These require your Firebase/Razorpay/Meta accounts, so the journeys below are the manual verification you should run once configured.
 
 ## Manual journeys
 

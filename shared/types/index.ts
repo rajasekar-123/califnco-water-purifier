@@ -37,6 +37,17 @@ export interface DealerProfile {
   reviewedAt?: number;
 }
 
+/** Attribution for a Wikimedia Commons photo (required by CC BY / CC BY-SA). */
+export interface ImageCredit {
+  author: string;
+  license: string;
+  licenseUrl?: string;
+  sourceUrl: string;
+  title: string;
+  /** "type": illustrative photo of this kind of product, not the exact SKU. */
+  matchLevel: 'type' | 'exact';
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -46,6 +57,7 @@ export interface Product {
   /** Customer (retail) price in INR. */
   price: number;
   image: string;
+  imageCredit?: ImageCredit;
   stock: number;
   specs: Record<string, string>;
   rating: number;
